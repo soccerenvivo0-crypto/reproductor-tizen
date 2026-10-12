@@ -1,0 +1,209 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mi reproductor M3U8</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js"></script>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 24px 16px;
+      background: #10141d;
+      color: #ffffff;
+      font-family: Arial, sans-serif;
+      text-align: center;
+    }
+
+    .contenedor {
+      max-width: 850px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      color: #42d392;
+      font-size: 27px;
+    }
+
+    p {
+      color: #c4cad5;
+    }
+
+    input {
+      width: 100%;
+      padding: 15px;
+      margin: 12px 0;
+      border: 1px solid #424b5b;
+      border-radius: 8px;
+      background: #202735;
+      color: white;
+      font-size: 16px;
+    }
+
+    button {
+      padding: 13px 22px;
+      margin: 5px;
+      border: none;
+      border-radius: 8px;
+      background: #42d392;
+      color: #10141d;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    .detener {
+      background: #ef5350;
+      color: white;
+    }
+
+    video {
+      display: block;
+      width: 100%;
+      margin-top: 22px;
+      background: #000;
+      border-radius: 10px;
+    }
+
+    #estado {
+      min-height: 24px;
+      margin-top: 16px;
+      overflow-wrap: anywhere;
+    }
+  </style>
+</head>
+
+<body>
+  <main class="contenedor">
+    <h1>Mi reproductor M3U8</h1>
+    <p>Pega el enlace autorizado de tu señal para reproducirlo.</p>
+
+    <input
+      id="url"
+      type="url"
+      placeholder="https://servidor/stream/index.m3u8"
+      autocomplete="off"
+    >
+
+    <div>
+      <button id="reproducir" type="button">▶ Reproducir</button>
+      <button id="detener" class="detener" type="button">■ Detener</button>
+    </div>
+
+    <video
+      id="video"
+      controls
+      playsinline
+      preload="none"
+    ></video>
+
+    <p id="estado" role="status">Introduce el enlace de tu señal.</p>
+  </main>
+
+  <script>
+    const video = document.getElementById("video");
+    const campoUrl = document.getElementById("url");
+    const estado = document.getElementById("estado");
+
+    let reproductorHls = null;
+
+    function detener() {
+      if (reproductorHls) {
+        reproductorHls.destroy();
+        reproductorHls = null;
+      }
+
+      video.pause();
+      video.removeAttribute("src");
+      video.load();
+    }
+
+    async function reproducir() {
+      const url = campoUrl.value.trim();
+
+      if (!url) {
+        estado.textContent = "Pega primero el enlace M3U8.";
+        return;
+      }
+
+      if (!/^https?:\/\//i.test(url)) {
+        estado.textContent = "El enlace debe comenzar con http:// o https://.";
+        return;
+      }
+
+      detener();
+      estado.textContent = "Conectando con la señal...";
+
+      try {
+        if (video.canPlayType("application/vnd.apple.mpegurl")) {
+          video.src = url;
+          video.load();
+
+          video.play().catch(() => {
+            estado.textContent =
+              "Pulsa el botón de reproducción del vídeo si no comienza automáticamente.";
+          });
+
+        } else if (window.Hls && Hls.isSupported()) {
+          reproductorHls = new Hls();
+
+          reproductorHls.on(Hls.Events.ERROR, function (event, data) {
+            if (data.fatal) {
+              estado.textContent =
+                "Error de reproducción. Comprueba el enlace, el servidor y los permisos CORS.";
+              reproductorHls.destroy();
+              reproductorHls = null;
+            }
+          });
+
+          reproductorHls.loadSource(url);
+          reproductorHls.attachMedia(video);
+
+          reproductorHls.on(Hls.Events.MANIFEST_PARSED, function () {
+            estado.textContent = "Señal cargada. Iniciando reproducción...";
+            video.play().catch(() => {
+              estado.textContent =
+                "Señal cargada. Pulsa Play en los controles del vídeo.";
+            });
+          });
+
+        } else {
+          estado.textContent =
+            "Este navegador no admite HLS directamente. Prueba otro navegador compatible.";
+        }
+      } catch (error) {
+        estado.textContent = "No se pudo iniciar la reproducción.";
+      }
+    }
+
+    document.getElementById("reproducir")
+      .addEventListener("click", reproducir);
+
+    document.getElementById("detener")
+      .addEventListener("click", function () {
+        detener();
+        estado.textContent = "Reproducción detenida.";
+      });
+
+    video.addEventListener("playing", function () {
+      estado.textContent = "Reproduciendo la señal.";
+    });
+
+    video.addEventListener("waiting", function () {
+      estado.textContent = "Cargando señal...";
+    });
+
+    video.addEventListener("error", function () {
+      estado.textContent =
+        "No se pudo reproducir. Verifica que el enlace esté activo y permita acceso desde esta página.";
+    });
+  </script>
+</body>
+</html>
