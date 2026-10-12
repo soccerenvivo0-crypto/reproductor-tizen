@@ -3,42 +3,41 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#10141d">
   <title>Mi reproductor M3U8</title>
 
   <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js"></script>
 
   <style>
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
 
     body {
       margin: 0;
-      padding: 24px 16px;
+      padding: 22px 14px;
       background: #10141d;
-      color: #ffffff;
+      color: #fff;
       font-family: Arial, sans-serif;
-      text-align: center;
     }
 
     .contenedor {
       max-width: 850px;
-      margin: 0 auto;
+      margin: auto;
     }
 
     h1 {
       color: #42d392;
+      text-align: center;
       font-size: 27px;
     }
 
-    p {
-      color: #c4cad5;
-    }
+    p { color: #c4cad5; }
+
+    .descripcion { text-align: center; }
 
     input {
       width: 100%;
-      padding: 15px;
+      padding: 14px;
       margin: 12px 0;
       border: 1px solid #424b5b;
       border-radius: 8px;
@@ -48,9 +47,9 @@
     }
 
     button {
-      padding: 13px 22px;
-      margin: 5px;
-      border: none;
+      padding: 13px 20px;
+      margin: 5px 3px;
+      border: 0;
       border-radius: 8px;
       background: #42d392;
       color: #10141d;
@@ -64,18 +63,29 @@
       color: white;
     }
 
+    .controles { text-align: center; }
+
     video {
       display: block;
       width: 100%;
-      margin-top: 22px;
+      max-height: 65vh;
+      margin-top: 18px;
       background: #000;
-      border-radius: 10px;
+      border-radius: 8px;
     }
 
     #estado {
-      min-height: 24px;
-      margin-top: 16px;
+      min-height: 42px;
+      padding: 10px;
+      border-radius: 6px;
+      background: #202735;
       overflow-wrap: anywhere;
+      line-height: 1.5;
+    }
+
+    .nota {
+      font-size: 13px;
+      line-height: 1.5;
     }
   </style>
 </head>
@@ -83,16 +93,20 @@
 <body>
   <main class="contenedor">
     <h1>Mi reproductor M3U8</h1>
-    <p>Pega el enlace autorizado de tu señal para reproducirlo.</p>
+
+    <p class="descripcion">
+      Introduce el enlace de tu señal autorizada.
+    </p>
 
     <input
       id="url"
       type="url"
-      placeholder="https://servidor/stream/index.m3u8"
+      placeholder="Pega aquí tu enlace M3U8"
       autocomplete="off"
+      aria-label="Enlace de la señal"
     >
 
-    <div>
+    <div class="controles">
       <button id="reproducir" type="button">▶ Reproducir</button>
       <button id="detener" class="detener" type="button">■ Detener</button>
     </div>
@@ -101,109 +115,216 @@
       id="video"
       controls
       playsinline
-      preload="none"
+      webkit-playsinline
+      preload="metadata"
     ></video>
 
-    <p id="estado" role="status">Introduce el enlace de tu señal.</p>
+    <p id="estado" role="status" aria-live="polite">
+      Introduce el enlace y pulsa Reproducir.
+    </p>
+
+    <p class="nota">
+      Si no funciona, el mensaje indicará qué debemos comprobar.
+      La reproducción depende de la compatibilidad del servidor y del navegador.
+    </p>
   </main>
 
   <script>
-    const video = document.getElementById("video");
-    const campoUrl = document.getElementById("url");
-    const estado = document.getElementById("estado");
+    (() => {
+      const video = document.getElementById("video");
+      const campoUrl = document.getElementById("url");
+      const estado = document.getElementById("estado");
+      const botonReproducir = document.getElementById("reproducir");
+      const botonDetener = document.getElementById("detener");
 
-    let reproductorHls = null;
+      let hls = null;
+      let intento = 0;
 
-    function detener() {
-      if (reproductorHls) {
-        reproductorHls.destroy();
-        reproductorHls = null;
+      function informar(mensaje) {
+        estado.textContent = mensaje;
       }
 
-      video.pause();
-      video.removeAttribute("src");
-      video.load();
-    }
+      function detener() {
+        intento++;
 
-    async function reproducir() {
-      const url = campoUrl.value.trim();
+        if (hls) {
+          hls.destroy();
+          hls = null;
+        }
 
-      if (!url) {
-        estado.textContent = "Pega primero el enlace M3U8.";
-        return;
-      }
+        video.pause();
+        video.removeAttribute("src");
 
-      if (!/^https?:\/\//i.test(url)) {
-        estado.textContent = "El enlace debe comenzar con http:// o https://.";
-        return;
-      }
-
-      detener();
-      estado.textContent = "Conectando con la señal...";
-
-      try {
-        if (video.canPlayType("application/vnd.apple.mpegurl")) {
-          video.src = url;
+        try {
           video.load();
+        } catch (_) {}
+      }
 
-          video.play().catch(() => {
-            estado.textContent =
-              "Pulsa el botón de reproducción del vídeo si no comienza automáticamente.";
+      function errorVideo() {
+        if (video.error) {
+          const codigo = video.error.code;
+          const mensajes = {
+            1: "La reproducción fue interrumpida.",
+            2: "Error de red: comprueba la conexión con el servidor.",
+            3: "Error al decodificar el vídeo o audio.",
+            4: "Formato o dirección no compatible con este navegador."
+          };
+
+          informar(
+            (mensajes[codigo] || "No se pudo reproducir la señal.") +
+            " Código: " + codigo + "."
+          );
+        }
+      }
+
+      async function reproducir() {
+        const url = campoUrl.value.trim();
+
+        if (!url) {
+          informar("Primero pega la dirección de tu señal.");
+          return;
+        }
+
+        let direccion;
+
+        try {
+          direccion = new URL(url);
+        } catch (_) {
+          informar("La dirección no es válida. Comprueba que esté completa.");
+          return;
+        }
+
+        if (!["http:", "https:"].includes(direccion.protocol)) {
+          informar("El enlace debe comenzar por http:// o https://.");
+          return;
+        }
+
+        detener();
+        const miIntento = intento;
+
+        informar("Comprobando compatibilidad y conectando...");
+
+        if (!window.Hls) {
+          informar(
+            "No se cargó la biblioteca HLS. Comprueba la conexión a Internet y recarga la página."
+          );
+          return;
+        }
+
+        try {
+          if (video.canPlayType("application/vnd.apple.mpegurl")) {
+            video.src = url;
+            video.load();
+            informar("El navegador admite HLS nativo. Solicitando la señal...");
+
+            try {
+              await video.play();
+            } catch (_) {
+              if (miIntento === intento) {
+                informar(
+                  "Pulsa Play en los controles del vídeo. Si no arranca, comprueba el error de reproducción."
+                );
+              }
+            }
+
+            return;
+          }
+
+          if (!Hls.isSupported()) {
+            informar(
+              "Este navegador no admite HLS.js ni HLS nativo. Prueba un navegador compatible."
+            );
+            return;
+          }
+
+          hls = new Hls({
+            enableWorker: true,
+            lowLatencyMode: false,
+            backBufferLength: 30,
+            manifestLoadingTimeOut: 20000,
+            levelLoadingTimeOut: 20000,
+            fragLoadingTimeOut: 30000
           });
 
-        } else if (window.Hls && Hls.isSupported()) {
-          reproductorHls = new Hls();
+          hls.on(Hls.Events.MEDIA_ATTACHED, () => {
+            if (miIntento !== intento) return;
+            informar("Reproductor preparado. Solicitando la lista de vídeo...");
+            hls.loadSource(url);
+          });
 
-          reproductorHls.on(Hls.Events.ERROR, function (event, data) {
-            if (data.fatal) {
-              estado.textContent =
-                "Error de reproducción. Comprueba el enlace, el servidor y los permisos CORS.";
-              reproductorHls.destroy();
-              reproductorHls = null;
+          hls.on(Hls.Events.MANIFEST_PARSED, async () => {
+            if (miIntento !== intento) return;
+            informar("Lista recibida. Intentando iniciar la reproducción...");
+
+            try {
+              await video.play();
+            } catch (_) {
+              if (miIntento === intento) {
+                informar(
+                  "Pulsa Play en el vídeo. Si sigue sin arrancar, revisaremos el error del servidor."
+                );
+              }
             }
           });
 
-          reproductorHls.loadSource(url);
-          reproductorHls.attachMedia(video);
+          hls.on(Hls.Events.ERROR, (evento, datos) => {
+            if (miIntento !== intento || !datos.fatal) return;
 
-          reproductorHls.on(Hls.Events.MANIFEST_PARSED, function () {
-            estado.textContent = "Señal cargada. Iniciando reproducción...";
-            video.play().catch(() => {
-              estado.textContent =
-                "Señal cargada. Pulsa Play en los controles del vídeo.";
-            });
+            const tipo = datos.type;
+            const detalle = datos.details || "";
+
+            if (tipo === Hls.ErrorTypes.NETWORK_ERROR) {
+              informar(
+                "Error de red al solicitar la señal. Puede ser la URL, HTTP/HTTPS, CORS o un bloqueo del servidor. Detalle: " +
+                detalle
+              );
+            } else if (tipo === Hls.ErrorTypes.MEDIA_ERROR) {
+              informar(
+                "Error de formato o decodificación del vídeo. Detalle: " +
+                detalle
+              );
+              hls.recoverMediaError();
+            } else {
+              informar(
+                "No se pudo reproducir la señal. Error: " + detalle
+              );
+              hls.destroy();
+              hls = null;
+            }
           });
 
-        } else {
-          estado.textContent =
-            "Este navegador no admite HLS directamente. Prueba otro navegador compatible.";
+          hls.attachMedia(video);
+
+        } catch (_) {
+          informar(
+            "No se pudo iniciar el reproductor. Recarga la página y vuelve a intentarlo."
+          );
         }
-      } catch (error) {
-        estado.textContent = "No se pudo iniciar la reproducción.";
       }
-    }
 
-    document.getElementById("reproducir")
-      .addEventListener("click", reproducir);
+      botonReproducir.addEventListener("click", reproducir);
 
-    document.getElementById("detener")
-      .addEventListener("click", function () {
+      botonDetener.addEventListener("click", () => {
         detener();
-        estado.textContent = "Reproducción detenida.";
+        informar("Reproducción detenida.");
       });
 
-    video.addEventListener("playing", function () {
-      estado.textContent = "Reproduciendo la señal.";
-    });
+      video.addEventListener("playing", () => {
+        informar("La señal se está reproduciendo.");
+      });
 
-    video.addEventListener("waiting", function () {
-      estado.textContent = "Cargando señal...";
-    });
+      video.addEventListener("waiting", () => {
+        informar("Esperando datos del servidor...");
+      });
 
-    video.addEventListener("error", function () {
-      estado.textContent =
-        "No se pudo reproducir. Verifica que el enlace esté activo y permita acceso desde esta página.";
-    });
+      video.addEventListener("error", errorVideo);
+
+      video.addEventListener("loadedmetadata", () => {
+        if (!video.error) {
+          informar("Vídeo detectado. Esperando reproducción...");
+        }
+      });
+    })();
   </script>
 </body>
 </html>
